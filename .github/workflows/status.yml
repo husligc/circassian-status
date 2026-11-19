@@ -1,0 +1,69 @@
+name: status
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: status
+  cancel-in-progress: false
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - name: Check the server by name and by address
+        id: check
+        run: |
+          # 401 + Supabase's own JSON (no key is sent) = the path reaches the app's server.
+          probe() {
+            for i in 1 2 3; do
+              code=$(curl -s -o body.json -w '%{http_code}' --max-time 15 "$1" || true)
+              if [ "$code" = "401" ] && grep -q '"message"' body.json; then echo true; return; fi
+              sleep 5
+            done
+            echo false
+          }
+          name=$(probe https://api.circassianapp.com/auth/v1/health)
+          ip=$(probe https://83.136.208.54/auth/v1/health)
+          ok=false
+          if [ "$name" = true ] || [ "$ip" = true ]; then ok=true; fi
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+          echo "ip=$ip" >> "$GITHUB_OUTPUT"
+          echo "ok=$ok" >> "$GITHUB_OUTPUT"
+          echo "name=$name ip=$ip ok=$ok"
+      - name: Publish status.json on the status branch
+        env:
+          NAME_OK: ${{ steps.check.outputs.name }}
+          IP_OK: ${{ steps.check.outputs.ip }}
+          OK: ${{ steps.check.outputs.ok }}
+          REPO: ${{ github.repository }}
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          url="https://x-access-token:${TOKEN}@github.com/${REPO}.git"
+          mkdir out && cd out
+          git init -q -b status
+          git config user.name "status-bot"
+          git config user.email "status-bot@users.noreply.github.com"
+          # The last run's outcome (runner memory, never read by the app): down needs two failures in a row.
+          prev_fail=false
+          if git fetch -q --depth 1 "$url" status 2>/dev/null; then
+            git checkout -q FETCH_HEAD -- . 2>/dev/null || true
+            if [ -f run.json ] && grep -q '"ok":false' run.json; then prev_fail=true; fi
+          fi
+          now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          echo "{\"ok\":${OK},\"at\":\"${now}\"}" > run.json
+          if [ "$OK" = true ]; then
+            echo "{\"v\":1,\"api\":\"ok\",\"name\":${NAME_OK},\"ip\":${IP_OK},\"at\":\"${now}\"}" > status.json
+          elif [ "$prev_fail" = true ]; then
+            echo "{\"v\":1,\"api\":\"down\",\"name\":false,\"ip\":false,\"at\":\"${now}\"}" > status.json
+          fi
+          # First failure: status.json keeps its last (older) value, which the app never takes for fresh.
+          [ -f status.json ] || echo "{\"v\":1,\"api\":\"down\",\"name\":false,\"ip\":false,\"at\":\"${now}\"}" > status.json
+          touch .nojekyll
+          git add status.json run.json .nojekyll
+          git commit -q -m "status ${now}"
+          git push -q -f "$url" status
+          cat status.json
