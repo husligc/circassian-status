@@ -1,4 +1,5 @@
 name: status
+# Every 10 minutes (GitHub often runs these late). Read by the Circassian App when it can't reach its server.
 on:
   schedule:
     - cron: '*/10 * * * *'
