@@ -1,12 +1,7 @@
-# circassian-status
+# circassian-status (frozen)
 
-A tiny outside check for Circassian App. Every 10 minutes GitHub's own servers check whether the app's
-server answers, and publish the result as `status.json` (branch `status`, also on GitHub Pages):
+This repository is frozen (archived on 2026-11-20). Nothing runs here any more.
 
-```json
-{"v":1,"api":"ok","name":true,"ip":true,"at":"2026-11-19T12:00:00Z"}
-```
-
-The app reads it only when it can't reach its server itself, to tell "this network won't let the app
-in" apart from "the server is down". `api` turns `down` only after two failed runs in a row (each run
-tries both addresses three times), so one blip on GitHub's side never says the server is down.
+It held a tiny outside check for Circassian App: GitHub's servers checked whether the app's server
+answered and published the result as `status.json` on the `status` branch. The app no longer uses it;
+one older test build still reads the last file, which is kept as it was.
